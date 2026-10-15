@@ -19,7 +19,7 @@ cd F:\AI学习\简历项目\tiktok-ecommerce-agent
 #    - SUPPLIER_SOURCE=jiafang  ← 找家纺网真实货源（免费）
 #    - PRODUCT_SOURCE=sample    ← TikTok 商品先用样本，配 FastMoss Key 后改 api
 
-# 3. 一键验证环境 + 真实数据链路
+# 3. 验证环境与真实数据链路
 python scripts\healthcheck.py      # 模型/向量库连通性
 python scripts\verify_data_source.py  # 找家纺网真实货源连通性
 ```
@@ -138,7 +138,7 @@ python scripts\demo_pipeline.py
 
 ---
 
-## 5. 切换到真实 TikTok 商品数据（三选一，一键切换）
+## 5. 切换到真实 TikTok 商品数据（三选一）
 
 默认 `PRODUCT_SOURCE=sample`（内置样本，零成本跑通全流程）。三种真实源改 `.env` 一行即可：
 
@@ -157,7 +157,7 @@ python scripts\demo_pipeline.py
 ```powershell
 # ① 记事本打开 .env，填好上面的 Key 并改 PRODUCT_SOURCE
 
-# ② 一键验证真实连通（用哪个源就带哪个参数）
+# ② 验证真实连通（用哪个源就带哪个参数）
 python scripts\verify_data_source.py --socialcrawl     # SocialCrawl（消耗 1 credit）
 python scripts\verify_data_source.py --tikhub          # TikHub（消耗约 $0.001）
 python scripts\verify_data_source.py --fastmoss        # FastMoss（消耗约 $0.01）
@@ -170,7 +170,7 @@ python scripts\verify_data_source.py --fastmoss        # FastMoss（消耗约 $0
 
 ---
 
-## 6. 日常操作闭环（真实使用场景）
+## 6. 日常操作流程（真实使用场景）
 
 1. **日本站选品**：工作台输入关键词（如 `純棉 ボックスシーツ 1.8m`），品类=床上用品、区域=JP、语言=日本語
 2. **看竞品**：哪个卖爆（销量）？评论在夸什么/骂什么（RAG 聚类出痛点证据）？

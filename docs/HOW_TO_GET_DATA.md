@@ -129,7 +129,7 @@ python scripts\verify_data_source.py --fastmoss
 | **镜海数据** (jhzyapi.com) | ✅ 27 个接口含 Shop 搜索/详情 | ✅ Shop 评论 | 按成功调用计费 | 注册 | ⏳ 可接入 |
 | **八爪鱼 Data Hub** | 模板采集 | ✅ TikTok Shop 评论模板 | 按条计费 | 美区为主 | ⏳ 一次性导出，非 API 对接 |
 
-**推荐路线（2026-10 已全部可一键切换）**：
+**推荐路线（三个源都可切换）**：
 1. **免费验证**：`PRODUCT_SOURCE=socialcrawl` —— 注册拿 100 免费 credits（无信用卡），
    `python scripts\verify_data_source.py --socialcrawl` 验证真实商品/评论链路
 2. **日常批量**：`PRODUCT_SOURCE=tikhub` —— $0.001/次（比 FastMoss 便宜约 10 倍）；
@@ -144,7 +144,7 @@ python scripts\verify_data_source.py --fastmoss
 
 **Q：为什么默认还是 sample？**
 A：保证任何环境（无网/无 Key）都能跑通全流程。切真实数据只改 `.env` 两行，`verify_data_source.py`
-一键验证连通，验证通过后再切。
+验证连通后再切。
 
 **Q：找家纺网能拿到什么字段？**
 A：店铺名、主营、地址、是否一件代发（store_daifa）、店铺销量、推荐商品（标题/价格/销量）。

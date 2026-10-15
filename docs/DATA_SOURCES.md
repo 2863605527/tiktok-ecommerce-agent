@@ -29,7 +29,7 @@ TikTok 商品与评论的**企业现实获取方式**是按接口付费的跨境
 | FastMoss / Kalodata / EchoTik / TikStar | 跨境卖家主流数据平台 | 商品搜索、详情、评论、达人、销量趋势 |
 | TikTok Shop Open Platform | 官方开放平台 | 授权店铺后拿商品/评论/订单（Review API） |
 
-项目已实现三个 TikTok 商品/评论客户端（同为 `ProductCrawler` 接口，一键切换）：
+项目已实现三个 TikTok 商品/评论客户端（同为 `ProductCrawler` 接口，可切换）：
 
 ```bash
 # .env 里 PRODUCT_SOURCE 一行切换，业务代码零改动
@@ -38,7 +38,7 @@ PRODUCT_SOURCE=tikhub        # TikHub：$0.001/次批量（评论含JP，搜索�
 PRODUCT_SOURCE=fastmoss      # FastMoss：$0.01/次（region=JP，日本站主力）
 ```
 
-通用客户端做了三件企业级的事：**字段名多候选映射**（不同平台的字段叫法不同）、
+通用客户端做了三件事：**字段名多候选映射**（不同平台的字段叫法不同）、
 **响应包裹兼容**（data/items/results 多种结构）、**货源去重**。
 
 ## 3. 为什么不直接用 requests 爬 TikTok？
