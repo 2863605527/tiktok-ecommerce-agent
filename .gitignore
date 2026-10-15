@@ -1,0 +1,47 @@
+# 环境与密钥
+.env
+*.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 数据与产物
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/vectors/*
+!data/vectors/.gitkeep
+# 用户库（含密码哈希，绝不入库）
+data/app.db
+data/app.db-*
+output/reports/*
+!output/reports/.gitkeep
+output/listings/*
+!output/listings/.gitkeep
+output/images/*
+!output/images/.gitkeep
+logs/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 本地工具状态（WorkBuddy 等，不参与版本管理）
+.workbuddy/
+*.workbuddy

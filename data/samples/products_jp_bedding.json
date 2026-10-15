@@ -1,0 +1,81 @@
+[
+  {
+    "id": "7300000000001",
+    "title": "ボックスシーツ 綿100% セミダブル オーガニックコットン マチ30cm 全周ゴム 洗える",
+    "price": "2,980円",
+    "currency": "JPY",
+    "url": "https://shop.tiktok.com/sample/product/7300000000001",
+    "description": "オーガニックコットン100%のボックスシーツ。肌にやさしく、通気性・吸湿性に優れています。マチ30cmで厚手のマットレスにも対応、全周ゴムでズレにくい。洗濯機で丸洗いOK。",
+    "sales": 12800,
+    "category": "bedding",
+    "specs": {
+      "size": "セミダブル(120×200cm)",
+      "material": "綿100%(オーガニックコットン)",
+      "color": "ホワイト",
+      "gusset": "マチ30cm",
+      "set": "ボックスシーツ1枚"
+    },
+    "tags": ["ボックスシーツ", "綿100%", "オーガニックコットン", "洗える", "セミダブル"],
+    "reviews": [
+      {"content": "肌触りがとてもなめらかで、寝返りしても気持ちいい。洗濯しても乾きが早いです。", "rating": 5, "helpful_count": 214, "author": "購入者A"},
+      {"content": "全周ゴムがしっかりしていて、朝までズレません。セミダブルにぴったりでした。", "rating": 5, "helpful_count": 156, "author": "購入者B"},
+      {"content": "オーガニックコットンのわりに値段が手頃でリピートしました。色も写真どおり。", "rating": 4, "helpful_count": 88, "author": "購入者C"},
+      {"content": "思ったより生地が薄く、下のマットレスの色が透けて見えます。夏はいいけど冬は寒いかも。", "rating": 3, "helpful_count": 45, "author": "購入者D"},
+      {"content": "一度洗ったら少し縮んだのか、四隅がパツパツになりました。サイズに余裕がほしい。", "rating": 2, "helpful_count": 67, "author": "購入者E"},
+      {"content": "開封時に少しにおいがありましたが、1回洗ったら消えました。", "rating": 3, "helpful_count": 23, "author": "購入者F"},
+      {"content": "発送が早くて助かりました。ただ畳みジワが強く、アイロンが必要です。", "rating": 4, "helpful_count": 12, "author": "購入者G"}
+    ]
+  },
+  {
+    "id": "7300000000002",
+    "title": "接触冷感 敷きパッド シングル Q-MAX0.45 ひんやり 抗菌防臭 洗える 夏用",
+    "price": "1,980円",
+    "currency": "JPY",
+    "url": "https://shop.tiktok.com/sample/product/7300000000002",
+    "description": "夏用ひんやり敷きパッド。Q-MAX0.45の高い接触冷感で寝た瞬間ひんやり。抗菌防臭・防ダニ加工、四隅ゴムバンド付きでズレ防止。洗濯機で丸洗い可能。",
+    "sales": 25600,
+    "category": "bedding",
+    "specs": {
+      "size": "シングル(100×200cm)",
+      "material": "ナイロン/ポリエステル(冷感素材)",
+      "color": "ブルー",
+      "qmax": "0.45",
+      "set": "敷きパッド1枚"
+    },
+    "tags": ["接触冷感", "敷きパッド", "ひんやり", "抗菌防臭", "防ダニ", "夏用"],
+    "reviews": [
+      {"content": "寝た瞬間ひんやりして、夏の寝苦しさが減りました。値段の割に冷たさが長持ちします。", "rating": 5, "helpful_count": 342, "author": "購入者H"},
+      {"content": "Q-MAX0.45と書いてあるだけあって、最初の冷たさは本物。ゴムバンドでズレない。", "rating": 5, "helpful_count": 198, "author": "購入者I"},
+      {"content": "2シーズン目ですが、洗濯5回目くらいから冷たさが弱くなった気がします。", "rating": 3, "helpful_count": 76, "author": "購入者J"},
+      {"content": "素材がツルツルして肌に合わず、汗をかくとベタつきます。人によるかも。", "rating": 2, "helpful_count": 54, "author": "購入者K"},
+      {"content": "冷感はあるけど薄手でクッション性はゼロ。上に薄いタオルを敷いて使っています。", "rating": 3, "helpful_count": 31, "author": "購入者L"},
+      {"content": "抗菌防臭の表示どおり、使っていてにおいは気になりません。コスパ◎。", "rating": 4, "helpful_count": 64, "author": "購入者M"}
+    ]
+  },
+  {
+    "id": "7300000000003",
+    "title": "布団カバー 4点セット シングル 水洗い綿100% 和晒し サテン織り ピーチスキン",
+    "price": "4,580円",
+    "currency": "JPY",
+    "url": "https://shop.tiktok.com/sample/product/7300000000003",
+    "description": "和晒し加工でやわらかい綿100%の布団カバー4点セット（掛け布団カバー・ボックスシーツ・枕カバー×2）。サテン織りのなめらかな肌触り。ホテル仕様の高密度生地。",
+    "sales": 6400,
+    "category": "bedding",
+    "specs": {
+      "size": "シングル",
+      "material": "綿100%(水洗い綿/サテン)",
+      "color": "アイボリー",
+      "weave": "サテン織り",
+      "set": "4点セット(掛けカバー+ボックスシーツ+枕カバー2)"
+    },
+    "tags": ["4点セット", "布団カバー", "綿100%", "サテン", "ホテル仕様", "シングル"],
+    "reviews": [
+      {"content": "サテンの肌触りがつるつるで気持ちよく、和晒しのやわらかさが良い。4点でこの値段は安い。", "rating": 5, "helpful_count": 121, "author": "購入者N"},
+      {"content": "セット内容がそろっていて、新生活にちょうどよかった。色味も落ち着いたアイボリー。", "rating": 5, "helpful_count": 97, "author": "購入者O"},
+      {"content": "枕カバーのファスナーが安っぽく、数回の洗濯で布が引きつれました。", "rating": 2, "helpful_count": 43, "author": "購入者P"},
+      {"content": "最初は光沢が強すぎるかと思ったが、洗うほどになじみます。", "rating": 4, "helpful_count": 28, "author": "購入者Q"},
+      {"content": "掛けカバーの留め紐が1か所ほつれていました。検品が甘いかもしれません。", "rating": 2, "helpful_count": 19, "author": "購入者R"},
+      {"content": "サイズ表記が日本のものと少し違い、ボックスシーツがきつめです。", "rating": 3, "helpful_count": 35, "author": "購入者S"}
+    ]
+  }
+]

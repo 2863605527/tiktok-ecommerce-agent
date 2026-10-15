@@ -1,0 +1,34 @@
+# 开发/演示编排：Milvus + 应用
+# 生产环境建议使用云托管向量库（如 Zilliz Cloud），无需自建 Milvus
+
+services:
+  milvus:
+    image: milvusdb/milvus:v2.4.0
+    container_name: tiktok-agent-milvus
+    command: ["milvus", "run", "standalone"]
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      COMMON_STORAGETYPE: "local"
+    volumes:
+      - milvus_data:/var/lib/milvus
+
+  app:
+    build: .
+    container_name: tiktok-agent-app
+    env_file:
+      - .env
+    depends_on:
+      - milvus
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "tiktok_ecommerce.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+
+volumes:
+  milvus_data:

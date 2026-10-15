@@ -1,0 +1,197 @@
+/* 全局基础样式（浅色现代主题，桌面端优先）——企业级设计系统 v2
+ * 核心：克制的品牌渐变 + 层级阴影 + 统一圆角/间距 + 骨架屏/动效 token
+ */
+:root {
+  /* 色板 */
+  --bg: #f5f6fa;
+  --bg-soft: #eef1f7;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f2f4fa;
+  --border: #e6e9f2;
+  --border-strong: #d4d9e6;
+  --text: #1c2433;
+  --text-dim: #667085;
+  --text-faint: #98a2b3;
+
+  --primary: #2e5cff;
+  --primary-hover: #1d4ef0;
+  --primary-bg: rgba(46, 92, 255, 0.08);
+  --primary-bg-strong: rgba(46, 92, 255, 0.14);
+
+  --success: #0e9f6e;
+  --success-bg: rgba(14, 159, 110, 0.1);
+  --warn: #d97706;
+  --warn-bg: rgba(217, 119, 6, 0.1);
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+
+  --brand-grad: linear-gradient(135deg, #2e5cff 0%, #7c4dff 100%);
+  --brand-grad-soft: linear-gradient(135deg, rgba(46, 92, 255, 0.1), rgba(124, 77, 255, 0.08));
+
+  /* 圆角 / 阴影 */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(28, 36, 51, 0.05);
+  --shadow: 0 1px 3px rgba(28, 36, 51, 0.06), 0 6px 20px rgba(28, 36, 51, 0.05);
+  --shadow-lg: 0 8px 30px rgba(28, 36, 51, 0.1);
+
+  /* 字体 */
+  --font: 'Microsoft YaHei', -apple-system, 'Segoe UI', 'PingFang SC', sans-serif;
+
+  /* 动效 */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur: 0.18s;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  background:
+    radial-gradient(1200px 500px at 15% -10%, rgba(46, 92, 255, 0.05), transparent 60%),
+    radial-gradient(1000px 400px at 90% -5%, rgba(124, 77, 255, 0.05), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  background: var(--bg-soft);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 13px;
+}
+
+/* 滚动条（企业级观感：细、浅、不抢眼） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c9cfdd;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #aeb6c9;
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+/* 通用骨架屏 */
+.skeleton {
+  background: linear-gradient(90deg, #eef1f7 25%, #f7f9fc 50%, #eef1f7 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.4s var(--ease) infinite;
+  border-radius: 8px;
+}
+
+@keyframes skeleton-loading {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* 打字光标（流式生成中） */
+@keyframes cursor-blink {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0; }
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: var(--primary);
+  border-radius: 1px;
+  animation: cursor-blink 0.9s step-end infinite;
+}
+
+/* 通用按钮：去掉玩具感渐变，纯品牌色 + 悬浮阴影 */
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+  box-shadow: 0 1px 2px rgba(46, 92, 255, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 4px 12px rgba(46, 92, 255, 0.25);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--bg-card-hover);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 通用卡片 */
+.card-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
