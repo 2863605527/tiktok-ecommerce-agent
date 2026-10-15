@@ -1,6 +1,6 @@
 # 启动教程（第一次用这个项目，照这个做）
 
-> 你不需要懂编程。照着下面每一步抄，就能把系统跑起来。
+> 按下面步骤操作即可把系统跑起来。
 > 全程只需要 4 个操作：**打开终端 → 敲命令 → 等它跑 → 打开浏览器**。
 
 ---
@@ -9,11 +9,11 @@
 
 | 东西 | 在哪 | 没有的话 |
 | --- | --- | --- |
-| 项目文件夹 | `F:\AI学习\简历项目\tiktok-ecommerce-agent` | 在（已在） |
+| 项目文件夹 | 项目根目录（本文以 `tiktok-ecommerce-agent` 为例） | 在（已在） |
 | 虚拟环境 | 项目里的 `.venv` 文件夹 | 已在（装依赖时建的） |
 | 配置文件 | 项目里的 `.env` | 已在（真实 Key 已填好） |
 
-> `.env` 里现在就是**真实数据源**：商品 = SocialCrawl（你的免费 Key），货源 = 找家纺网。
+> `.env` 里现在是**真实数据源**：商品 = SocialCrawl（免费额度 Key），货源 = 找家纺网。
 > 不用再改任何东西。
 
 ---
@@ -32,7 +32,7 @@
 把下面三行**依次**粘贴进终端，每行敲完按一次回车：
 
 ```powershell
-cd F:\AI学习\简历项目\tiktok-ecommerce-agent
+cd <项目根目录，如 D:\work\tiktok-ecommerce-agent>
 .\.venv\Scripts\activate
 python -m uvicorn tiktok_ecommerce.api.app:create_app --factory --port 8000
 ```
@@ -54,7 +54,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000
 再按 `Win+R` → `powershell` → 回车，**新开一个终端**，粘贴：
 
 ```powershell
-cd F:\AI学习\简历项目\tiktok-ecommerce-agent\frontend
+cd <项目根目录>\frontend
 npm run dev
 ```
 
@@ -112,8 +112,8 @@ http://localhost:5173
 
 ## 第 6 步：每天怎么开机用（就 3 步）
 
-1. 开终端 1 → `cd F:\AI学习\简历项目\tiktok-ecommerce-agent` → `.\.venv\Scripts\activate` → `python -m uvicorn tiktok_ecommerce.api.app:create_app --factory --port 8000`
-2. 开终端 2 → `cd F:\AI学习\简历项目\tiktok-ecommerce-agent\frontend` → `npm run dev`
+1. 开终端 1 → `cd <项目根目录>` → `.\.venv\Scripts\activate` → `python -m uvicorn tiktok_ecommerce.api.app:create_app --factory --port 8000`
+2. 开终端 2 → `cd <项目根目录>\frontend` → `npm run dev`
 3. 浏览器开 `http://localhost:5173`
 
 关掉 = 两个终端按 `Ctrl+C`。

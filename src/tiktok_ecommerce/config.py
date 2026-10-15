@@ -84,7 +84,7 @@ class CrawlerSettings(BaseSettings):
 
     tiktok_base_url: str = "https://www.tiktok.com"
     supplier_base_url: str = "https://www.1688.com"
-    # 找家纺网（用户指定默认货源平台；原 91家纺网已替换）
+    # 找家纺网（默认货源平台；原 91家纺网已替换）
     jiafang_base_url: str = "https://www.zhaojiafang.com"
     # 找家纺搜索 API（前后端分离，数据 JSON 返回）
     jiafang_api_base_url: str = "https://api-pl-mobile.zhaojiafang.com"

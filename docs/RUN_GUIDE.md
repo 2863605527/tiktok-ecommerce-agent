@@ -7,14 +7,14 @@
 ## 0. 前置检查（一次性）
 
 ```powershell
-# 项目根目录
-cd F:\AI学习\简历项目\tiktok-ecommerce-agent
+# 项目根目录（下文以 <项目根目录> 指代，例如 D:\work\tiktok-ecommerce-agent）
+cd <项目根目录>
 
 # 1. 激活 Python 虚拟环境
 .\.venv\Scripts\activate
 
 # 2. 检查 .env 配置（记事本打开）
-#    - LLM_API_KEY / EMBEDDING_API_KEY 已填真实 Key（你已配置，healthcheck 全绿）
+#    - LLM_API_KEY / EMBEDDING_API_KEY 已填真实 Key（应已配置，healthcheck 全绿）
 #    - RAG_BACKEND=milvus（已用 docker compose up -d milvus 启动）或 ragflow
 #    - SUPPLIER_SOURCE=jiafang  ← 找家纺网真实货源（免费）
 #    - PRODUCT_SOURCE=sample    ← TikTok 商品先用样本，配 FastMoss Key 后改 api
@@ -75,7 +75,7 @@ npm run dev          # 开发服务器
 
 ```powershell
 # 终端 1：启动后端
-cd F:\AI学习\简历项目\tiktok-ecommerce-agent
+cd <项目根目录>
 .\.venv\Scripts\activate                          # 激活虚拟环境
 python -m uvicorn tiktok_ecommerce.api.app:create_app --factory --port 8000
 ```
@@ -91,7 +91,7 @@ python -m uvicorn tiktok_ecommerce.api.app:create_app --factory --port 8000
 
 ```powershell
 # 终端 2：前端（另开一个终端）
-cd F:\AI学习\简历项目\tiktok-ecommerce-agent\frontend
+cd <项目根目录>\frontend
 npm install          # 首次执行（已装过可跳过）
 npm run dev          # 开发服务器
 ```

@@ -1,7 +1,7 @@
 # 数据来源说明（DATA SOURCES）
 
-> 本项目最常被问的问题就是「数据怎么来」。本文给出三层答案：
-> 现在跑通用的是样本数据；生产用第三方数据平台 API；TikTok 直连为什么不可行。
+> 本文说明三层数据来源：当前默认的样本数据、生产用的第三方数据平台 API、
+> 以及 TikTok 直连为什么不可行。
 
 ## 1. 当前：样本数据（离线可跑，默认）
 
@@ -11,7 +11,7 @@
 | `data/samples/suppliers_jiafang_bedding.json` | 8 条找家纺风格货源（南通叠石桥、一件代发） |
 | `data/samples/suppliers_1688_bedding.json` | 6 条 1688 风格货源（**可选数据源**，保留供对比） |
 
-样本不是"假数据糊弄"，而是工程上的**数据源抽象**：与真实 API 实现同一套接口
+样本是工程上的**数据源抽象**：与真实 API 实现同一套接口
 （`ProductCrawler` / `SupplierCrawler`），因此开发、测试、CI、演示不依赖外网与反爬。
 
 ```bash
@@ -54,12 +54,12 @@ PRODUCT_SOURCE=fastmoss      # FastMoss：$0.01/次（region=JP，日本站主�
 
 因此直连通道（`crawlers/tiktok.py` / `supplier.py` / `zhaojiafang.py`）的定位是：
 **合规扩展点**——默认抛出带指引的 `CrawlerError`，留 Playwright + 指纹 + 住宅代理的
-接入位置，但不承诺稳定可用。"我调研过直连的可行性，结论是不可行，
-所以把架构设计为可插拔数据源，生产走第三方 API。"
+接入位置，但不承诺稳定可用。直连可行性调研结论是不可行，
+所以架构设计为可插拔数据源，生产走第三方 API。
 
 ## 4. 货源：找家纺网（默认，真实 API 已跑通） + 1688（可选）
 
-- **找家纺网**（`www.zhaojiafang.com`）：南通叠石桥家纺垂直平台（用户指定），
+- **找家纺网**（`www.zhaojiafang.com`）：南通叠石桥家纺垂直平台（默认货源），
   提供公开搜索 API（`api-pl-mobile.zhaojiafang.com/api/store_search/store_list`），
   返回店铺 + 主营 + 推荐商品（标题/价格/代发标识）。实现：`crawlers/zhaojiafang.py`，
   无需登录、无需付费，2026-10 实测跑通。
