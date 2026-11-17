@@ -3,12 +3,46 @@ import { computed, ref } from 'vue'
 import type { ChatMessage, SupplierOffer } from '@/api/types'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useToastStore } from '@/stores/toast'
+import { selectionApi } from '@/api/selection'
 
 const props = defineProps<{ msg: ChatMessage }>()
 const emit = defineEmits<{ (e: 'retry'): void }>()
 
 const fav = useFavoritesStore()
 const toast = useToastStore()
+
+// 素材包下载（聊天里直接打包：listing.json + 商品图 + 图上文字日译）
+const zipping = ref(false)
+const imageTextsJa = computed(() => {
+  const arr = props.msg.data?.listing?.image_texts_ja ?? []
+  return arr.slice(0, 4).map((t) => t.ja).filter(Boolean).join(' / ')
+})
+async function downloadPack() {
+  const lp = props.msg.data?.listing_path
+  if (!lp) {
+    toast.error('还没有素材包文件，请先运行「上架素材」阶段')
+    return
+  }
+  zipping.value = true
+  try {
+    const blob = await selectionApi.packageListing({
+      listing_path: lp,
+      image_urls: props.msg.data?.listing?.images ?? [],
+    })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    const parts = lp.split('/').filter(Boolean)
+    const folder = parts.length >= 2 ? parts[parts.length - 2] : 'listing'
+    a.download = `${folder}_素材包.zip`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast.success('素材包已下载（含图片 + 图上文字日译）')
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : '素材包打包失败')
+  } finally {
+    zipping.value = false
+  }
+}
 
 const isUser = computed(() => props.msg.role === 'user')
 const expanded = ref(true)
@@ -485,6 +519,10 @@ async function copyKeywords() {
           <div class="card-title">
             上架素材
             <span class="copy-group">
+              <button v-if="msg.data.listing_path" class="mini-btn primary" :disabled="zipping"
+                @click="downloadPack">
+                {{ zipping ? '打包中…' : '⬇ 下载素材包' }}
+              </button>
               <button class="mini-btn" @click="copyListing('ja')">
                 {{ copied === 'ja' ? '✓ 已复制' : '复制日文' }}
               </button>
@@ -502,6 +540,9 @@ async function copyKeywords() {
             <span v-for="k in msg.data.listing.keywords.slice(0, 6)" :key="k" class="chip chip-pos">{{ k }}</span>
           </div>
           <div v-if="msg.data.listing.description" class="report-line">{{ msg.data.listing.description }}</div>
+          <div v-if="imageTextsJa" class="listing-sub">
+            图上文字日译：{{ imageTextsJa }}
+          </div>
           <div v-if="msg.data.listing_path" class="listing-path">📄 {{ msg.data.listing_path }}</div>
         </div>
 
@@ -880,6 +921,28 @@ async function copyKeywords() {
 .mini-btn.on {
   color: var(--warn);
   border-color: var(--warn);
+}
+
+/* 素材包下载（主操作按钮） */
+.mini-btn.primary {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+.mini-btn.primary:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
+.mini-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.listing-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  line-height: 1.5;
 }
 
 /* 失败重试 */

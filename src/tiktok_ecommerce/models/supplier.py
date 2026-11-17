@@ -49,6 +49,10 @@ class ListingPackage(BaseModel):
         description="规格日语化结果，如 {size: セミダブル(120x200cm), material: 綿100%}",
     )
     images: list[str] = Field(default_factory=list, description="处理后的图片路径列表")
+    image_texts_ja: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="图上文字日译（首张商品图 OCR + 翻译，随素材包交付）",
+    )
 
     def to_csv_row(self) -> dict:
         """转成可直接导入上架工具/表格的一行（键为中文表头）。"""

@@ -59,9 +59,13 @@ export const selectionApi = {
   async *runStream(req: SelectionRequest): AsyncGenerator<SelectionStreamEvent> {
     let resp: Response
     try {
+      const token = localStorage.getItem('tk-agent:auth:token')
       resp = await fetch('/api/v1/selections/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(req),
       })
     } catch {

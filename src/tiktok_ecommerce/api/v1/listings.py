@@ -37,14 +37,21 @@ class ListingPackageRequest(BaseModel):
 
 
 def _resolve_listing_file(rel_path: str) -> Path:
-    """校验并解析 listing.json 路径（仅允许 output/listings 下，防穿越）。"""
-    p = Path(rel_path)
-    parts = p.parts
-    if not parts or parts[0] != _SAFE_LISTINGS_DIR:
-        raise ValidationError("listing 路径必须在 output/listings 下")
+    """校验并解析 listing.json 路径（仅允许 output/listings 下，防穿越）。
+
+    兼容两种入参：相对 output/ 的路径（listings/xxx/listing.json，前端标准）
+    与历史数据里的绝对路径（必须落在 output/listings 内才放行）。
+    """
     settings = get_settings()
-    resolved = (settings.output_dir / p).resolve()
-    if not str(resolved).startswith(str((settings.output_dir / _SAFE_LISTINGS_DIR).resolve())):
+    safe_root = (settings.output_dir / _SAFE_LISTINGS_DIR).resolve()
+    p = Path(rel_path)
+    if p.is_absolute():
+        resolved = p.resolve()
+    else:
+        if not p.parts or p.parts[0] != _SAFE_LISTINGS_DIR:
+            raise ValidationError("listing 路径必须在 output/listings 下")
+        resolved = (settings.output_dir / p).resolve()
+    if not str(resolved).startswith(str(safe_root)):
         raise ValidationError("listing 路径越界，已拒绝")
     if not resolved.exists() or not resolved.is_file():
         raise ValidationError(f"listing 文件不存在: {rel_path}")
@@ -113,9 +120,12 @@ def package_listing(
 
     buf = io.BytesIO()
     skipped: list[str] = []
+    # 前端没传图片 URL 时，回落到 listing.json 里记录的图片（演示路径更稳）
+    image_urls = list(req.image_urls or []) or [
+        u for u in (listing_json.get("images") or []) if isinstance(u, str)]
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("listing.json", json.dumps(listing_json, ensure_ascii=False, indent=2))
-        for url in req.image_urls[:20]:
+        for url in image_urls[:20]:
             if not url.startswith(("http://", "https://")):
                 skipped.append(url)
                 continue
@@ -123,11 +133,28 @@ def package_listing(
                 skipped.append(url)
                 continue
             try:
-                with urllib.request.urlopen(url, timeout=15) as resp:
+                # 带 UA：TikTok / 找家纺 CDN 对默认 urllib UA 可能 403
+                req_img = urllib.request.Request(url, headers={
+                    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"),
+                })
+                with urllib.request.urlopen(req_img, timeout=15) as resp:
                     data = resp.read()
+                if len(data) < 1024:  # 空响应/错误页，不塞进包
+                    skipped.append(url)
+                    continue
                 zf.writestr(f"images/{_safe_zip_name(url)}", data)
             except Exception:
                 skipped.append(url)
+        # 本地已处理图（如 CLI --image-dir 规格化产物）一并打包
+        local_dir = listing_file.parent / "images"
+        if local_dir.is_dir():
+            for f in sorted(local_dir.glob("*"))[:20]:
+                try:
+                    if f.is_file() and f.stat().st_size > 1024:
+                        zf.writestr(f"images/{f.name}", f.read_bytes())
+                except Exception:
+                    continue
 
     buf.seek(0)
     stem = listing_file.stem  # listing.json → 目录名后缀无意义，用父目录名

@@ -123,10 +123,19 @@ class ListingAgent(BaseAgent):
         listing = self._generate_copy(product, report, region, language)
         # 规格日语化（规则层，解决翻译慢痛点）
         listing.specs_translated = self._translate_specs(product)
-        listing.images = self._process_images(product.title, state.get("image_dir"))
+        listing.images = self._process_images(
+            product.title, state.get("image_dir"), getattr(product, "images", None))
+        # 图上文字日译：首张商品图 OCR + 翻译，写进素材包（日本站直接可用）
+        listing.image_texts_ja = self._image_texts_ja(listing.images)
 
         path = self._save(product.title, listing)
-        return {"listing": listing, "listing_path": str(path)}
+        # 返回相对 output/ 的 posix 路径（前端 package/preview/csv 接口只接受相对路径）
+        from tiktok_ecommerce.config import get_settings
+        try:
+            rel = path.relative_to(get_settings().output_dir).as_posix()
+        except ValueError:
+            rel = str(path)
+        return {"listing": listing, "listing_path": rel}
 
     def _generate_copy(
         self, product: Product, report: SelectionReport | None, region: str,
@@ -180,13 +189,55 @@ class ListingAgent(BaseAgent):
         # 3) 已是日文则原样返回；规则未命中保留原值（不编造）
         return result if _JAPANESE_RE.search(result) or result != v else v
 
-    def _process_images(self, product_title: str, src_dir: str | None) -> list[str]:
-        """处理图片（本地目录；真实场景可替换为商品图 URL 下载扩展点）。"""
-        if not src_dir or not Path(src_dir).is_dir():
-            logger.info("未提供图片目录，跳过图片处理")
+    def _process_images(self, product_title: str, src_dir: str | None,
+                        product_images: list[str] | None = None) -> list[str]:
+        """处理图片：优先本地目录；否则用商品图 URL（素材包按 URL 下载进 ZIP）。
+
+        Web/聊天链路拿到的竞品图是 CDN URL（无本地文件），直接回填 URL，
+        保证「素材包 ZIP 带图片」这条链路可用；本地目录场景（CLI --image-dir）走规格化。
+        """
+        if src_dir and Path(src_dir).is_dir():
+            dst = self.output_dir / self._safe_name(product_title) / "images"
+            return self.image_processor.process_batch(Path(src_dir), dst)
+        urls = [u for u in (product_images or []) if isinstance(u, str) and u.startswith("http")]
+        if urls:
+            logger.info("[%s] 使用商品图 URL %d 张（未本地规格化）", self.name, len(urls[:5]))
+            return urls[:5]
+        logger.info("无图片目录/商品图，跳过图片处理")
+        return []
+
+    def _image_texts_ja(self, urls: list[str]) -> list[dict[str, str]]:
+        """对首张商品图做 OCR + 日文翻译（图上文字日译，随素材包交付）。
+
+        失败一律降级为空（不影响素材生成主链路）；耗时约 3~8s（OCR + LLM）。
+        """
+        if not urls or not str(urls[0]).startswith("http"):
             return []
-        dst = self.output_dir / self._safe_name(product_title) / "images"
-        return self.image_processor.process_batch(Path(src_dir), dst)
+        try:
+            import requests
+
+            from tiktok_ecommerce.common.llm import create_llm
+            from tiktok_ecommerce.config import get_settings
+            from tiktok_ecommerce.image_processing.ocr import ImageTextService
+
+            s = get_settings()
+            tmp = self.output_dir / "_ocr_tmp"
+            tmp.mkdir(parents=True, exist_ok=True)
+            dst = tmp / f"ocr_{abs(hash(urls[0])) & 0xFFFFF}.jpg"
+            resp = requests.get(urls[0], timeout=20, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            })
+            resp.raise_for_status()
+            dst.write_bytes(resp.content)
+            info = ImageTextService(create_llm(s)).analyze(dst)
+            pairs = [{"zh": t.get("src", t.get("zh", "")), "ja": t.get("dst", t.get("ja", ""))}
+                     for t in (info.translations or [])[:10] if (t.get("dst") or t.get("ja"))]
+            if pairs:
+                logger.info("[%s] 图上文字日译 %d 条", self.name, len(pairs))
+            return pairs
+        except Exception as e:
+            logger.warning("[%s] 图上文字日译失败（不影响素材生成）: %s", self.name, e)
+            return []
 
     # ---------- 保存 ----------
     def _save(self, product_title: str, listing: ListingPackage) -> Path:
