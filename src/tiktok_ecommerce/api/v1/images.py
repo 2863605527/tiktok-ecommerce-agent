@@ -23,7 +23,7 @@ from tiktok_ecommerce.common.exceptions import ValidationError
 from tiktok_ecommerce.common.logging import get_logger
 from tiktok_ecommerce.common.llm import create_llm
 from tiktok_ecommerce.config import get_settings
-from tiktok_ecommerce.image_processing.ocr import ImageTextService
+from tiktok_ecommerce.image_processing.ocr import ImageTextService, parse_trans_pair
 from tiktok_ecommerce.image_processing.processor import ImageProcessor, RATIO_PRESETS
 
 logger = get_logger(__name__)
@@ -39,6 +39,8 @@ class ImageProcessRequest(BaseModel):
     white_bg: bool = Field(True, description="是否背景白底化")
     bg_mode: BgMode = Field("ai", description="白底方式：ai=AI智能抠图(rembg，对灰/渐变/阴影有效) / heuristic=快速阈值去底")
     max_side: int = Field(1000, ge=200, le=2048, description="长边上限")
+    replace_text: bool = Field(False, description="是否把图上原文擦除并原位写译文")
+    trans_pair: str = Field("zh2ja", description="翻译方向：zh2ja=中→日 / zh2en=中→英 / en2zh=英→中 / ja2zh=日→中")
 
 
 class ImageProcessBatchRequest(BaseModel):
@@ -48,6 +50,8 @@ class ImageProcessBatchRequest(BaseModel):
     white_bg: bool = Field(True, description="是否背景白底化")
     bg_mode: BgMode = Field("ai", description="白底方式")
     max_side: int = Field(1000, ge=200, le=2048, description="长边上限")
+    replace_text: bool = Field(False, description="是否把图上原文擦除并原位写译文")
+    trans_pair: str = Field("zh2ja", description="翻译方向：zh2ja=中→日 / zh2en=中→英 / en2zh=英→中 / ja2zh=日→中")
 
 
 def _download_image(url: str, dst_dir: Path) -> Path:
@@ -76,10 +80,12 @@ def _download_image(url: str, dst_dir: Path) -> Path:
 
 
 def _process_one(image_url: str, ratio: str, white_bg: bool, bg_mode: str,
-                 max_side: int) -> dict:
+                 max_side: int, replace_text: bool = False,
+                 trans_pair: str = "zh2ja") -> dict:
     """处理单张商品图（供单图/批量共用）：下载 → 规格化 → OCR → 翻译 → 建议。"""
     if ratio not in RATIO_PRESETS:
         raise ValidationError(f"不支持的比例: {ratio}（可选 {list(RATIO_PRESETS)}）")
+    src_lang, tgt_lang = parse_trans_pair(trans_pair)
 
     s = get_settings()
     base = s.output_dir / "images"
@@ -98,10 +104,17 @@ def _process_one(image_url: str, ratio: str, white_bg: bool, bg_mode: str,
     final, bg_used = proc.process_image_pipeline(
         src, out_dir, ratio=ratio, white_bg=white_bg, bg_mode=bg_mode)
 
-    # 3) OCR + 翻译（OCR 不可用时自动降级）
+    # 3) OCR + 翻译（在处理后的白底图上跑，坐标对齐；OCR 不可用时自动降级）
     llm = create_llm(s)
     svc = ImageTextService(llm)
-    info = svc.analyze(src)
+    info = svc.analyze(final, source=src_lang, target=tgt_lang)  # 在处理后的图上 OCR，bbox 直接对应 final
+
+    # 4) 可选：擦除原文 + 原位写译文
+    replaced_path = None
+    if replace_text and info.has_text and info.blocks:
+        from tiktok_ecommerce.image_processing.text_overlay import replace_text_on_image
+        dst_path = out_dir / final.name.replace(".jpg", f"_{tgt_lang}.jpg")
+        replaced_path = replace_text_on_image(final, info.blocks, dst_path)
 
     return {
         "original_url": image_url,
@@ -110,19 +123,22 @@ def _process_one(image_url: str, ratio: str, white_bg: bool, bg_mode: str,
         "ratio": ratio,
         "white_bg": white_bg,
         "bg_used": bg_used,
+        "trans_pair": trans_pair,
         "ocr_backend": info.ocr_backend,
         "has_text": info.has_text,
-        "texts": info.zh_texts[:20],
+        "texts": info.src_texts[:20],
         "translations": info.translations[:20],
         "advice": info.advice,
+        "replaced_path": str(replaced_path) if replaced_path else None,
+        "replaced_name": replaced_path.name if replaced_path else None,
     }
 
 
 @router.post("/process")
 def process_image(req: ImageProcessRequest, user=Depends(get_current_user)) -> dict:
-    """处理一张商品图：下载 → 规格化（白底/比例/压缩）→ OCR → 日文翻译 → 上架建议。"""
+    """处理一张商品图：下载 → 规格化（白底/比例/压缩）→ OCR → 翻译 → 上架建议。"""
     return _process_one(req.image_url, req.ratio, req.white_bg, req.bg_mode,
-                        req.max_side)
+                        req.max_side, req.replace_text, req.trans_pair)
 
 
 @router.post("/process/batch")
@@ -134,12 +150,13 @@ def process_image_batch(req: ImageProcessBatchRequest,
     """
     if req.ratio not in RATIO_PRESETS:
         raise ValidationError(f"不支持的比例: {req.ratio}（可选 {list(RATIO_PRESETS)}）")
+    parse_trans_pair(req.trans_pair)  # 提前校验翻译方向，避免 4 张全跑到一半才报错
     items: list[dict] = []
     ok = failed = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
             pool.submit(_process_one, url, req.ratio, req.white_bg, req.bg_mode,
-                        req.max_side): url
+                        req.max_side, req.replace_text, req.trans_pair): url
             for url in req.image_urls
         }
         for fut in as_completed(futures):

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// 图片优化工作台：商品图规格化（白底/比例/压缩）+ 图上文字识别 + 日文翻译
-// 单图 + 批量双通道；白底支持 AI 智能抠图（rembg，本地离线）与快速去底
+// 图片优化工作台：商品图规格化（白底/比例/压缩）+ 图上文字识别 + 多语种翻译
+// （中→日 / 中→英 / 英→中 / 日→中），单图 + 批量双通道；
+// 白底支持 AI 智能抠图（rembg，本地离线）与快速去底
 // （KeepAlive name=images：切走再回来处理结果不丢）
 import { ref } from 'vue'
 import { processImage, processImageBatch } from '@/api/images'
-import type { BgMode } from '@/api/images'
+import type { BgMode, TransPair } from '@/api/images'
 import type { ImageProcessBatchResult, ImageProcessResult } from '@/api/types'
 
 defineOptions({ name: 'images' })
@@ -13,6 +14,8 @@ const imageUrl = ref('')
 const ratio = ref('1:1')
 const whiteBg = ref(true)
 const bgMode = ref<BgMode>('ai')
+const replaceText = ref(false)
+const transPair = ref<TransPair>('zh2ja')
 const loading = ref(false)
 const error = ref('')
 const result = ref<ImageProcessResult | null>(null)
@@ -37,6 +40,24 @@ const bgModeOptions = [
   { value: 'ai', label: 'AI 智能抠图（推荐，阴影/渐变/灰底都能去）' },
   { value: 'heuristic', label: '快速去底（像素阈值，适合干净浅色底）' },
 ]
+
+const transPairOptions: Array<{ value: TransPair; label: string }> = [
+  { value: 'zh2ja', label: '中文 → 日文' },
+  { value: 'zh2en', label: '中文 → 英文' },
+  { value: 'en2zh', label: '英文 → 中文' },
+  { value: 'ja2zh', label: '日文 → 中文' },
+]
+
+const LANG_LABEL: Record<string, string> = { zh: '中文', ja: '日文', en: '英文' }
+
+function pairLabel(p: string) {
+  const [s, t] = p.split('2')
+  return `${LANG_LABEL[s] || s} → ${LANG_LABEL[t] || t}`
+}
+
+function tgtLang(p: string) {
+  return (p.split('2')[1] || 'ja')
+}
 
 const examples = [
   'https://imgniu.zhaojiafang.com/store/goods/11848/11848_PQN172e7da8a56f2d93f76b1ea14ecce394.jpg',
@@ -90,19 +111,19 @@ function downloadAll() {
   })
 }
 
-/** 复制翻译结果（单图/批量）：拼接全部日文翻译，一键粘贴到素材/客服话术 */
-function copyTranslations(items: Array<{ zh: string; ja?: string } | { translations: Array<{ zh: string; ja?: string }> }>) {
-  const pairs: Array<{ zh: string; ja?: string }> = []
+/** 复制翻译结果（单图/批量）：拼接全部译文，一键粘贴到素材/客服话术 */
+function copyTranslations(items: Array<{ src: string; dst?: string }> | Array<{ translations: Array<{ src: string; dst?: string }> }>) {
+  const pairs: Array<{ src: string; dst?: string }> = []
   for (const it of items) {
     if ('translations' in it && Array.isArray((it as { translations: unknown[] }).translations)) {
-      pairs.push(...(it as { translations: Array<{ zh: string; ja?: string }> }).translations)
+      pairs.push(...(it as { translations: Array<{ src: string; dst?: string }> }).translations)
     } else {
-      pairs.push(it as { zh: string; ja?: string })
+      pairs.push(it as { src: string; dst?: string })
     }
   }
   const text = pairs
-    .filter((p) => p.ja)
-    .map((p) => `${p.zh}：${p.ja}`)
+    .filter((p) => p.dst)
+    .map((p) => `${p.src}：${p.dst}`)
     .join('\n')
   if (!text) return
   navigator.clipboard.writeText(text).then(
@@ -125,7 +146,7 @@ async function run() {
   error.value = ''
   result.value = null
   try {
-    result.value = await processImage(imageUrl.value.trim(), ratio.value, whiteBg.value, bgMode.value)
+    result.value = await processImage(imageUrl.value.trim(), ratio.value, whiteBg.value, bgMode.value, replaceText.value, transPair.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -155,7 +176,7 @@ async function runBatch() {
   batchError.value = ''
   batchResult.value = null
   try {
-    batchResult.value = await processImageBatch(urls, ratio.value, whiteBg.value, bgMode.value)
+    batchResult.value = await processImageBatch(urls, ratio.value, whiteBg.value, bgMode.value, replaceText.value, transPair.value)
   } catch (e) {
     batchError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -168,7 +189,7 @@ async function runBatch() {
   <div class="page">
     <div class="page-head">
       <h1>商品图片优化</h1>
-      <p class="sub">上架最头疼的商品图：白底/比例规格化 + 图上中文文字识别 → 日文翻译 → 上架建议</p>
+      <p class="sub">上架最头疼的商品图：白底/比例规格化 + 图上文字识别 → 多语种翻译（中⇄日 / 中⇄英）→ 上架建议</p>
     </div>
 
     <div class="panel">
@@ -185,8 +206,14 @@ async function runBatch() {
         <label class="checkbox">
           <input v-model="whiteBg" type="checkbox"> 白底化
         </label>
+        <label class="checkbox">
+          <input v-model="replaceText" type="checkbox"> 替换图内文字为译文
+        </label>
         <select v-model="bgMode" class="ratio-select" :disabled="!whiteBg">
           <option v-for="m in bgModeOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
+        <select v-model="transPair" class="ratio-select" title="图上文字翻译方向">
+          <option v-for="p in transPairOptions" :key="p.value" :value="p.value">{{ p.label }}</option>
         </select>
         <button class="primary" :disabled="loading" @click="run">
           {{ loading ? '处理中…' : '开始处理' }}
@@ -204,7 +231,7 @@ async function runBatch() {
       </div>
     </div>
 
-    <div v-if="loading" class="loading-box">正在下载图片 → 规格化处理 → AI 抠图/去底 → 文字识别 → 日文翻译…</div>
+    <div v-if="loading" class="loading-box">正在下载图片 → 规格化处理 → AI 抠图/去底 → 文字识别 → {{ pairLabel(transPair) }}翻译…</div>
 
     <div v-if="result" class="result">
       <div class="grid">
@@ -221,6 +248,13 @@ async function runBatch() {
             <button class="mini-btn" @click="downloadOne(result.processed_path)">⬇ 下载处理后图</button>
           </div>
         </div>
+        <div v-if="result.replaced_path" class="img-card">
+          <div class="card-title">{{ LANG_LABEL[tgtLang(result.trans_pair)] }}版（已替换图内文字）</div>
+          <img :src="processedUrl(result.replaced_path)" alt="译文版" loading="lazy" @error="onImgError">
+          <div class="img-actions">
+            <button class="mini-btn" @click="downloadOne(result.replaced_path)">⬇ 下载{{ LANG_LABEL[tgtLang(result.trans_pair)] }}版</button>
+          </div>
+        </div>
       </div>
 
       <div class="advice-box" :class="result.has_text ? 'warn' : 'ok'">
@@ -234,20 +268,20 @@ async function runBatch() {
 
       <div v-if="result.translations.length" class="text-table">
         <div class="table-head">
-          <h3>图上文字 → 日文翻译（可直接作配图文案）</h3>
+          <h3>图上文字 → {{ LANG_LABEL[tgtLang(result.trans_pair)] }}翻译（{{ pairLabel(result.trans_pair) }}，可直接作配图文案）</h3>
           <button class="mini-btn" @click="copyTranslations(result.translations)">
-            {{ copiedJa ? '✓ 已复制' : '⇩ 复制全部日文' }}
+            {{ copiedJa ? '✓ 已复制' : '⇩ 复制全部译文' }}
           </button>
         </div>
         <table>
           <thead>
-            <tr><th>#</th><th>图上中文</th><th>日文翻译</th></tr>
+            <tr><th>#</th><th>图上原文</th><th>{{ LANG_LABEL[tgtLang(result.trans_pair)] }}译文</th></tr>
           </thead>
           <tbody>
             <tr v-for="(t, i) in result.translations" :key="i">
               <td>{{ i + 1 }}</td>
-              <td>{{ t.zh }}</td>
-              <td class="ja">{{ t.ja || '—' }}</td>
+              <td>{{ t.src }}</td>
+              <td class="ja">{{ t.dst || '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -261,7 +295,7 @@ async function runBatch() {
     <!-- 批量处理 -->
     <div class="panel batch-panel">
       <h2>批量处理</h2>
-      <p class="sub">一次处理 1~20 张：每行一个图片链接，按同一比例/白底设置批量生成（并发 4，单张失败不影响其余）</p>
+      <p class="sub">一次处理 1~20 张：每行一个图片链接，按同一比例/白底/翻译方向设置批量生成（并发 4，单张失败不影响其余）</p>
       <textarea
         v-model="batchUrls"
         class="batch-input"
@@ -269,6 +303,10 @@ async function runBatch() {
         placeholder="https://imgniu.zhaojiafang.com/...\nhttps://imgniu.zhaojiafang.com/..."
       />
       <div class="form-row">
+        <label class="checkbox">翻译方向：</label>
+        <select v-model="transPair" class="ratio-select" title="图上文字翻译方向">
+          <option v-for="p in transPairOptions" :key="p.value" :value="p.value">{{ p.label }}</option>
+        </select>
         <button class="primary" :disabled="batchLoading" @click="runBatch">
           {{ batchLoading ? '批量处理中…' : '开始批量处理' }}
         </button>
@@ -281,12 +319,14 @@ async function runBatch() {
       </div>
       <div v-if="batchError" class="error">{{ batchError }}</div>
 
+      <!-- 复制按钮独立一行，不占网格格子（否则会把卡片布局挤乱） -->
+      <div v-if="batchResult && batchResult.ok && batchResult.items.some((i) => i.translations?.length)" class="batch-copy-all">
+        <button class="mini-btn" @click="copyTranslations(batchResult.items)">
+          ⇩ 复制全部译文（{{ pairLabel(transPair) }}，{{ batchResult.items.reduce((n, i) => n + (i.translations?.length ?? 0), 0) }} 条）
+        </button>
+      </div>
+
       <div v-if="batchResult" class="batch-grid">
-        <div v-if="batchResult.ok && batchResult.items.some((i) => i.translations?.length)" class="batch-copy-all">
-          <button class="mini-btn" @click="copyTranslations(batchResult.items)">
-            ⇩ 复制全部日文翻译（{{ batchResult.items.reduce((n, i) => n + (i.translations?.length ?? 0), 0) }} 条）
-          </button>
-        </div>
         <div v-for="(item, i) in batchResult.items" :key="i" class="batch-card" :class="{ failed: item.error }">
           <div class="batch-thumb">
             <img v-if="!item.error" :src="processedUrl(item.processed_path)" alt="处理后" loading="lazy" @error="onImgError">
@@ -297,8 +337,8 @@ async function runBatch() {
               {{ item.error ? item.error : bgUsedLabel(item.bg_used) + ' · ' + (item.has_text ? '图上有字' : '无字') }}
             </div>
             <div class="batch-tr" :title="item.original_url">{{ item.original_url.slice(0, 60) }}…</div>
-            <div v-if="item.translations.length" class="batch-tr ja">
-              例: {{ item.translations[0].ja }}
+            <div v-if="item.translations.length" class="batch-tr ja" :title="item.translations[0].dst">
+              例: {{ item.translations[0].dst }}
             </div>
             <button v-if="!item.error" class="mini-btn" @click="downloadOne(item.processed_path)">
               ⬇ 下载
@@ -566,21 +606,28 @@ async function runBatch() {
 }
 
 .batch-thumb {
+  position: relative;
   aspect-ratio: 1 / 1;
   background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
   border-bottom: 1px solid var(--border);
 }
 
 .batch-thumb img {
+  /* 绝对定位 + inset 0：无论原图多大，强制约束在 1:1 容器内，杜绝溢出破版 */
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
 .fail-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--danger);
   font-size: 13px;
   padding: 12px;
@@ -642,7 +689,7 @@ async function runBatch() {
 }
 
 .batch-copy-all {
-  margin-bottom: 10px;
+  margin-top: 12px;
   text-align: right;
 }
 

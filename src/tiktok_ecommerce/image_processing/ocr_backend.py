@@ -44,29 +44,33 @@ class OcrBackend:
 
     def texts(self, image_path) -> list[str]:
         """识别中文文字，返回去重保序列表。"""
+        return [t for t, _ in self.texts_with_boxes(image_path)]
+
+    def texts_with_boxes(self, image_path) -> list[tuple[str, list]]:
+        """识别中文文字，返回 [(text, bbox), ...]，bbox 为四点坐标 [[x1,y1],...]。"""
         self._ensure()
         if not self._engine:
             return []
-        found: list[str] = []
+        found: list[tuple[str, list]] = []
         try:
             if self.backend_name == "rapidocr":
                 result, _ = self._engine(str(image_path))
                 for r in (result or []):
                     if len(r) >= 2 and str(r[1]).strip():
-                        found.append(str(r[1]).strip())
+                        found.append((str(r[1]).strip(), r[0]))
             else:
-                # PaddleOCR：新 predict API 与旧 ocr API 兼容
+                # PaddleOCR 兜底（无 bbox 时返回空坐标）
                 try:
                     res = self._engine.predict(str(image_path))
                     if res and isinstance(res, (list, tuple)):
                         for page in res:
                             if isinstance(page, dict):
-                                for k in ("rec_texts", "rec_text"):
-                                    vals = page.get(k)
-                                    if vals:
-                                        found.extend(
-                                            str(t).strip() for t in vals if str(t).strip())
-                                        break
+                                texts = page.get("rec_texts") or page.get("rec_text") or []
+                                boxes = page.get("rec_polys") or page.get("rec_boxes") or []
+                                for i, t in enumerate(texts):
+                                    if str(t).strip():
+                                        box = boxes[i] if i < len(boxes) else []
+                                        found.append((str(t).strip(), box))
                 except (TypeError, ValueError):
                     result = self._engine.ocr(str(image_path), cls=True)
                     for page in result or []:
@@ -77,14 +81,14 @@ class OcrBackend:
                                 text = (item[1][0] if isinstance(item[1], (list, tuple))
                                         else "").strip()
                                 if text:
-                                    found.append(text)
+                                    found.append((text, item[0] if len(item) > 2 else []))
         except Exception as e:  # noqa: BLE001
             logger.warning("OCR 推理失败（%s），跳过文字识别", e)
             return []
         seen: set[str] = set()
-        out: list[str] = []
-        for t in found:
+        out: list[tuple[str, list]] = []
+        for t, box in found:
             if t and t not in seen:
                 seen.add(t)
-                out.append(t)
+                out.append((t, box))
         return out

@@ -31,11 +31,14 @@ export interface ImageProcessResult {
   ratio: string
   white_bg: boolean
   bg_used: 'ai' | 'heuristic' | 'none'
+  trans_pair: string
   ocr_backend: string
   has_text: boolean
   texts: string[]
-  translations: { zh: string; ja: string }[]
+  translations: { src: string; dst: string }[]
   advice: string
+  replaced_path: string | null
+  replaced_name: string | null
 }
 
 export interface ImageProcessBatchResult {
@@ -84,6 +87,8 @@ export interface ListingPackage {
   hashtags: string[]
   specs_translated: Record<string, string>
   images: string[]
+  /** 图上文字日译（首张商品图 OCR + 翻译，随素材包交付） */
+  image_texts_ja?: Array<{ zh: string; ja: string }>
 }
 
 /** 导出前预览（人工批准门控：先看内容再下载） */
