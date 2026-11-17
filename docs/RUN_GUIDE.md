@@ -13,11 +13,11 @@ cd <项目根目录>
 # 1. 激活 Python 虚拟环境
 .\.venv\Scripts\activate
 
-# 2. 检查 .env 配置（记事本打开）
-#    - LLM_API_KEY / EMBEDDING_API_KEY 已填真实 Key（应已配置，healthcheck 全绿）
-#    - RAG_BACKEND=milvus（已用 docker compose up -d milvus 启动）或 ragflow
+# 2. 检查 .env 配置（文本编辑器打开）
+#    - LLM_API_KEY / EMBEDDING_API_KEY 填写对应的模型服务 Key
+#    - RAG_BACKEND=milvus（需先 docker compose up -d milvus）或 ragflow / memory
 #    - SUPPLIER_SOURCE=jiafang  ← 找家纺网真实货源（免费）
-#    - PRODUCT_SOURCE=sample    ← TikTok 商品先用样本，配 FastMoss Key 后改 api
+#    - PRODUCT_SOURCE=sample    ← 样本数据；配 FastMoss Key 后改 api
 
 # 3. 验证环境与真实数据链路
 python scripts\healthcheck.py      # 模型/向量库连通性

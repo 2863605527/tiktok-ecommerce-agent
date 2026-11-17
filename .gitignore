@@ -41,7 +41,3 @@ logs/
 .vscode/
 .DS_Store
 Thumbs.db
-
-# 本地工具状态（WorkBuddy 等，不参与版本管理）
-.workbuddy/
-*.workbuddy
