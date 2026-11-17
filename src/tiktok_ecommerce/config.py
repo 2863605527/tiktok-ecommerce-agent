@@ -157,8 +157,6 @@ class AuthSettings(BaseSettings):
     token_ttl_hours: int = 12
     # 用户库 SQLite 路径（相对项目根）
     db_path: str = "data/app.db"
-    # 利润测算默认汇率（1 CNY ≈ ? JPY，估算值，可按实际行情改 .env）
-    fx_cny_jpy: float = 21.0
 
 
 class Settings(BaseSettings):
@@ -179,6 +177,17 @@ class Settings(BaseSettings):
     crawler: CrawlerSettings = Field(default_factory=CrawlerSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+
+    # 利润测算默认汇率（1 CNY ≈ ? JPY，估算值，可按实际行情改 .env：FX_CNY_JPY=21）
+    fx_cny_jpy: float = 21.0
+    # 美元→人民币汇率（用户用"美元"给成本/售价时折算用，可按实际行情改 .env：FX_USD_CNY=7.2）
+    fx_usd_cny: float = 7.2
+
+    # 运费估算（日本专线小包，估算值，.env 可覆盖）：用户没给运费时按重量推算
+    shipping_first_weight_kg: float = 0.5    # 首重（kg）
+    shipping_first_price_cny: float = 42.0   # 首重价格（CNY）
+    shipping_extra_per_kg_cny: float = 28.0  # 续重单价（CNY/kg）
+    default_product_weight_kg: float = 1.0   # 用户没说重量时的默认单件重量（kg）
 
     @field_validator("log_level")
     @classmethod

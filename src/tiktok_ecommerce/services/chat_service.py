@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,6 +46,7 @@ class ConversationContext:
     last_query: str = ""
     last_intent: str = ""
     supplier_source: str = ""   # 会话级货源平台（"1688"/"jiafang"...；空=默认找家纺网）
+    profit: dict | None = None  # 最近一次利润测算/定价参数（追问续算用：mode+params+target_margin）
 
     def has_content(self) -> bool:
         return bool(self.offers or self.products or self.listing)
@@ -83,8 +85,15 @@ LISTING_TOKENS = [
 ]
 PROFIT_TOKENS = [
     "利润", "能赚", "赚多少", "毛利", "净利", "利润率", "成本", "划算吗",
-    "利润测算", "算下利润", "赚不赚", "回本",
+    "利润测算", "算下利润", "赚不赚", "回本", "定价多少", "卖多少日元",
+    "进货价", "拿货价", "采购价", "卖多少", "该卖多少", "卖多少合适",
     "利益", "もうけ", "コスト", "儲かる",
+]
+# 利润/定价会话的追问词：上一轮刚做过测算时，带这些词的追问继续走 profit
+# （否则"运费/佣金…"会被 QA 词表劫持成平台常识模板，丢掉上下文）
+PROFIT_FOLLOWUP_TOKENS = PROFIT_TOKENS + [
+    "运费", "佣金", "广告", "汇率", "税费", "售价", "进价",
+    "改成", "调整为", "调到", "再算", "重算",
 ]
 QA_TOKENS = [
     "运费", "物流", "关税", "政策", "平台", "日本站", "回款", "入驻",
@@ -277,6 +286,8 @@ class ChatService:
         # 会话上下文：conversation_id → 最近一次业务结果（默认模块级共享，跨请求生效）
         self._contexts = contexts if contexts is not None else _SHARED_CONTEXTS
         self._user_id = ""  # 当前请求用户（handle/handle_stream 开头设置，_ctx 用于隔离）
+        # LLM 兜底解析结果暂存（意图分类时顺带提取的参数，_run_profit 消费后清空）
+        self._llm_params_stash: dict | None = None
 
     def _supplier_crawler_for(self, source: str | None):
         """解析指定货源源（1688/jiafang/sample/api）；无指定 → 默认注入 crawler。"""
@@ -341,7 +352,29 @@ class ChatService:
         """基础意图 + 上下文引用（"第一条货源生成素材" → 不再重新搜索）。"""
         intent = classify_intent(message)
         ctx = self._ctx(conversation_id)
-        if intent in ("out_of_scope", "self_intro", "switch_supplier"):
+        # 利润/定价追问优先：上一轮刚做过测算时，费用/参数相关消息沿用上下文继续算
+        # （放在 out_of_scope 早退之前，否则"售价改成4000呢"会被误判范围外）
+        if ctx.profit and any(t in message for t in PROFIT_FOLLOWUP_TOKENS):
+            return "profit"
+        # LLM 意图仲裁：规则失灵的两类情形交给 LLM 重判——
+        #   1. 判为 out_of_scope（换措辞/口语/错别字没命中词表）
+        #   2. 消息带数字 + 有利润/价格信号（赚/亏/定价/卖多少...）但规则没判成 profit
+        #      （如"拿货两百八，卖三千日币"被"拿货"误路由到找货源）
+        _arbitrate = intent == "out_of_scope" or (
+            intent not in ("profit", "self_intro", "switch_supplier")
+            and re.search(r"[0-9一二两三四五六七八九十百千万]", message)
+            and re.search(r"赚|利润|毛利|净利|亏|划算|回本|定价|卖多少|该卖|多少钱|卖价|售价", message)
+        )
+        if _arbitrate:
+            self._llm_params_stash = None
+            sem = self._llm_understand(message)
+            if sem:
+                mapped = self._LLM_INTENT_LABELS.get(str(sem.get("intent")))
+                if mapped and mapped != "out_of_scope":
+                    self._llm_params_stash = sem.get("params") or None
+                    return mapped
+            return "out_of_scope" if intent == "out_of_scope" else intent
+        if intent in ("self_intro", "switch_supplier"):
             return intent
         if ctx.has_content() and has_context_ref(message):
             # 引用货源/商品 + 素材词 → 基于上下文生成素材；否则 → 基于上下文回答
@@ -676,21 +709,184 @@ class ChatService:
 
     # ---------------- 利润测算（profit） ----------------
 
+    # 参数提取；允许"运费改成30 / 售价是5000"这类调整词夹在中间，
+    # 并覆盖进货价/拿货价/采购价等口语说法
+    _ADJUST_WORDS = r"\s*(?:改成|调成|调整为|调到|改为|设为|设成|改|调|是|为)?\s*[:：=]?\s*"
     _PROFIT_PARAM_RE = {
-        "selling": re.compile(r"售价\s*[:：=]?\s*(\d+)"),
-        "cost": re.compile(r"(?:进价|成本)\s*[:：=]?\s*(\d+)"),
-        "shipping": re.compile(r"运费\s*[:：=]?\s*(\d+)"),
-        "ads": re.compile(r"广告\s*[:：=]?\s*(\d+)"),
+        "selling": re.compile(r"(?:售价|卖价|零售价|卖出价|定价)" + _ADJUST_WORDS + r"(\d+)"),
+        "cost": re.compile(r"(?:进货价|采购价|拿货价|批发价|进价|成本)" + _ADJUST_WORDS + r"(\d+)"),
+        "shipping": re.compile(r"运费" + _ADJUST_WORDS + r"(\d+)"),
+        "ads": re.compile(r"广告" + _ADJUST_WORDS + r"(\d+)"),
     }
+    # 倒装口语："2000日元成本 / 50的运费 / 卖价3000" —— 数字在关键词前面；单位词紧跟数字
+    _UNIT_RE = r"([jJ][pP][yY]|日元|日币|日方|美元|美金|[uU][sS][dD])"
+    _REVERSE_PARAM_RE = {
+        "selling": re.compile(r"(\d+)\s*" + _UNIT_RE + r"?\s*(?:的)?(?:售价|卖价|零售价|卖出价|定价)"),
+        "cost": re.compile(r"(\d+)\s*" + _UNIT_RE + r"?\s*(?:的)?(?:进货价|采购价|拿货价|批发价|进价|成本)"),
+        "shipping": re.compile(r"(\d+)\s*" + _UNIT_RE + r"?\s*(?:的)?运费"),
+        "ads": re.compile(r"(\d+)\s*" + _UNIT_RE + r"?\s*(?:的)?广告"),
+    }
+    _JPY_WORDS = ("jpy", "日元", "日币", "日方")
+    _USD_WORDS = ("usd", "美元", "美金")
+
+    @staticmethod
+    def _map_unit(word: str | None) -> str | None:
+        """货币词 → 标准单位（JPY/USD），None=默认币种（人民币口径）。"""
+        if not word:
+            return None
+        w = word.lower()
+        if w in ("jpy", "日元", "日币", "日方"):
+            return "JPY"
+        if w in ("usd", "美元", "美金"):
+            return "USD"
+        return None
+
+    @staticmethod
+    def _sniff_unit(message: str, pos: int) -> str | None:
+        """看数字后面紧跟着的货币词（"成本是15美元"→USD），识别不到 → None。"""
+        tail = message[pos:pos + 4].lstrip()
+        for w in ("日元", "日币", "日方", "美元", "美金"):
+            if tail.startswith(w):
+                return "JPY" if w in ("日元", "日币", "日方") else "USD"
+        low = tail.lower()
+        if low.startswith("jpy"):
+            return "JPY"
+        if low.startswith("usd"):
+            return "USD"
+        return None
 
     def _extract_profit_params(self, message: str) -> dict[str, float] | None:
-        """从消息提取显式参数（售价/成本/运费/广告）；无任何参数 → None。"""
+        """从消息提取显式参数（售价/成本/运费/广告）；无任何参数 → None。
+
+        数字后的货币词（"成本是15美元"）与倒装（"2000日元成本"）都会打上单位标记，
+        由 _normalize_param_units 按汇率折算；倒装只在数字未被其它参数占用时生效。
+        """
         params: dict[str, float] = {}
+        spans: list[tuple[int, int]] = []
         for key, pattern in self._PROFIT_PARAM_RE.items():
             m = pattern.search(message)
             if m:
                 params[key] = float(m.group(1))
+                spans.append((m.start(), m.end()))
+                unit = self._sniff_unit(message, m.end())
+                if unit:
+                    params[f"{key}_unit"] = unit
+        for key, pattern in self._REVERSE_PARAM_RE.items():
+            if key in params:
+                continue
+            m = pattern.search(message)
+            if not m:
+                continue
+            num_span = (m.start(1), m.end(1))
+            if any(s < num_span[1] and num_span[0] < e for s, e in spans):
+                continue  # 数字已被其它参数占用
+            params[key] = float(m.group(1))
+            spans.append((m.start(), m.end()))
+            unit = self._map_unit(m.group(2)) or self._sniff_unit(message, m.end(1))
+            if unit:
+                params[f"{key}_unit"] = unit
         return params or None
+
+    # ---------------- LLM 语义兜底层（规则失灵时的理解层） ----------------
+    # 规则（词表+正则）保持秒回快路径；以下情况交给 LLM：
+    #   1. 规则判为 out_of_scope（换措辞/口语/错别字没命中词表）→ LLM 重判意图
+    #   2. 规则进 profit 但关键参数没提取到（倒装/中文数字/单位口语）→ LLM 提取
+    _LLM_INTENT_LABELS = {
+        "profit": "profit", "sourcing_only": "sourcing_only", "listing_only": "listing_only",
+        "script_only": "script_only", "select_product": "select_product",
+        "qa_ecommerce": "qa_ecommerce", "greeting": "self_intro", "out_of_scope": "out_of_scope",
+    }
+    _LLM_UNDERSTAND_SYS = (
+        "你是跨境电商助手的语义解析模块。把用户消息解析成严格 JSON，只输出 JSON 本体，"
+        "不要解释、不要代码块围栏。\n"
+        "intent 只能取：profit（利润测算/定价咨询/赚多少/回本/会不会亏）、sourcing_only（找货源）、"
+        "listing_only（生成上架素材/标题/翻译）、script_only（带货脚本）、select_product（选品/竞品分析）、"
+        "qa_ecommerce（平台规则/物流/开店咨询）、greeting（问候）、out_of_scope（与电商无关）。\n"
+        "params 字段（未提及一律填 null）：selling（售价）、cost（成本/进价/拿货价）、shipping（运费）、"
+        "ads（广告投入）、weight_kg（重量，kg）、target_margin（目标净利率，25% 填 0.25）。\n"
+        "单位字段 selling_unit/cost_unit/shipping_unit/ads_unit 取 \"JPY\"/\"CNY\"/\"USD\"："
+        "日元/日币/JPY=JPY，块/元/人民币/CNY=CNY，美元/美金/USD/$=USD；"
+        "默认：售价 JPY，成本/运费/广告 CNY。美元就如实标 USD，不要自行折算成人民币。\n"
+        "中文数字要换算（两百=200、两千=2000、一百五=150）；容忍错别字与口语"
+        "（如\"产品时成本\"=\"产品是成本\"、\"拿货两百八\"=280）。\n"
+        "is_followup：是否在追问/调整上一轮测算（如\"运费和佣金怎么算的\"）。\n"
+        '输出格式：{"intent":"...","is_followup":false,"params":{...}}'
+    )
+
+    def _llm_understand(self, message: str) -> dict[str, Any] | None:
+        """LLM 语义兜底：意图+参数一次解析。模型不可用/超时/解析失败 → None（走规则结果）。"""
+        llm = self.script_generator
+        if llm is None:
+            return None
+        try:
+            import json
+            from concurrent.futures import ThreadPoolExecutor
+            from langchain_core.messages import HumanMessage, SystemMessage
+
+            model = llm.bind(temperature=0)
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                resp = ex.submit(
+                    lambda: model.invoke([
+                        SystemMessage(content=self._LLM_UNDERSTAND_SYS),
+                        HumanMessage(content=message),
+                    ]),
+                ).result(timeout=12)
+            content = (resp.content or "").strip()
+            start, end = content.find("{"), content.rfind("}")
+            if start < 0 or end <= start:
+                return None
+            return json.loads(content[start:end + 1])
+        except Exception as e:
+            logger.warning("[chat] LLM 语义兜底失败（回退规则）: %s: %s",
+                           type(e).__name__, str(e)[:120])
+            return None
+
+    def _llm_semantic_params(self, message: str,
+                             llm_params: dict | None) -> dict | None:
+        """Hook B：规则没抓到关键参数时，LLM 提取（消息含数字才触发，避免纯追问多打一次）。"""
+        if llm_params is not None:
+            return llm_params
+        if not re.search(r"[0-9一二两三四五六七八九十百千万]", message):
+            return None  # 纯追问（无任何数字）→ 交给上下文/追问逻辑
+        sem = self._llm_understand(message) or {}
+        return sem.get("params") or None
+
+    def _normalize_param_units(self, params: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """货币单位归一：售价→JPY，成本/运费/广告→CNY；支持 JPY/USD/CNY 三种输入。
+
+        Returns:
+            (params, 折算说明)——说明串展示给用户（如"成本 15 USD × 汇率 7.2 ≈ 108 CNY；"）。
+        """
+        fx = self.settings.fx_cny_jpy or 21.0
+        usd = getattr(self.settings, "fx_usd_cny", 0) or 7.2
+        notes: list[str] = []
+        labels = {"selling": "售价", "cost": "成本", "shipping": "运费", "ads": "广告"}
+        for key in ("selling", "cost", "shipping", "ads"):
+            unit = params.pop(f"{key}_unit", None)
+            val = params.get(key)
+            if not unit or not isinstance(val, (int, float)) or val <= 0:
+                continue
+            if key == "selling":
+                # 售价统一成 JPY
+                if unit == "CNY":
+                    jpy = val * fx
+                    notes.append(f"{labels[key]} {val:g} CNY × 汇率 {fx:.0f} ≈ {jpy:.0f} JPY；")
+                    params[key] = round(jpy, 1)
+                elif unit == "USD":
+                    jpy = val * usd * fx
+                    notes.append(f"{labels[key]} {val:g} USD × {usd:g} × 汇率 {fx:.0f} ≈ {jpy:,.0f} JPY；")
+                    params[key] = round(jpy, 1)
+            else:
+                # 成本/运费/广告统一成 CNY
+                if unit == "JPY":
+                    cny = val / fx
+                    notes.append(f"{labels[key]} {val:g} JPY ÷ 汇率 {fx:.0f} ≈ {cny:.1f} CNY；")
+                    params[key] = round(cny, 2)
+                elif unit == "USD":
+                    cny = val * usd
+                    notes.append(f"{labels[key]} {val:g} USD × {usd:g} ≈ {cny:.0f} CNY；")
+                    params[key] = round(cny, 2)
+        return params, "".join(notes)
 
     def _profit_from_context(self, conversation_id: str) -> dict[str, Any] | None:
         """用会话上下文估算：最近竞品售价(JPY) + 最近货源进价(CNY)。"""
@@ -709,13 +905,61 @@ class ChatService:
         return {"selling": selling, "cost": cost, "shipping": shipping}
 
     def _run_profit(self, message: str,
-                    conversation_id: str = "") -> dict[str, Any]:
-        """利润测算：显式参数优先，其次用上下文（最近竞品售价/货源进价）估算。"""
+                    conversation_id: str = "",
+                    llm_params: dict | None = None) -> dict[str, Any]:
+        """利润测算：显式参数优先，其次用上下文（最近竞品售价/货源进价）估算。
+
+        规则提取不到关键参数（倒装/中文数字/错别字）时，LLM 语义兜底提取。
+        """
         from tiktok_ecommerce.services.profit import ProfitRequest, compute_profit
 
+        # 意图兜底分类时顺带解析出的参数（消费后清空）
+        if llm_params is None:
+            llm_params = self._llm_params_stash
+        self._llm_params_stash = None
+
         params = self._extract_profit_params(message)
+        llm_target = None
+        # LLM 语义兜底触发：售价/成本任一缺失就试 LLM（倒装/中文数字/非关键词写法）；
+        # 例外：已抓到成本、缺售价、且消息就是纯定价问句（"卖多少钱合适"）→ 直接给定价建议，省一次调用
+        _pricing_ask = bool(params and "cost" in params and "selling" not in params
+                            and re.search(r"定价|卖多少|该卖|什么价|多少钱", message))
+        if (params is None or "cost" not in params or "selling" not in params) and not _pricing_ask:
+            # 规则没抓到关键参数 → LLM 语义兜底（含暂存参数，避免二次调用）
+            sem_p = self._llm_semantic_params(message, llm_params)
+            if sem_p:
+                for k in ("selling", "cost", "shipping", "ads"):
+                    v = sem_p.get(k)
+                    if v is not None:
+                        params = params or {}
+                        params.setdefault(k, float(v))
+                    u = sem_p.get(f"{k}_unit")
+                    if u:
+                        params = params or {}
+                        params.setdefault(f"{k}_unit", str(u))
+                if sem_p.get("weight_kg") is not None:
+                    params = params or {}
+                    params.setdefault("weight", float(sem_p["weight_kg"]))
+                if sem_p.get("target_margin") is not None:
+                    llm_target = float(sem_p["target_margin"])
+        params, fx_note = self._normalize_param_units(params or {})
+        if not params:
+            params = None
         ctx = self._ctx(conversation_id)
         ctx_hint = ""
+        last = ctx.profit or {}
+        adjusted = bool(params)
+        user_params = dict(params) if params else {}
+        _carry = ("selling", "cost", "shipping", "ads", "weight")
+        if params and last:
+            # 追问补参（如"运费50 再算"）：显式参数覆盖上次输入，其余沿用
+            merged = {k: last[k] for k in _carry
+                      if k in last and k not in params}
+            params = {**merged, **params}
+            ctx_hint = "（按你的调整重算）"
+        elif params is None and last:
+            # 纯追问（如"运费和佣金是怎么算的"）：沿用上一轮参数重算，并拆口径解释
+            params = {k: last[k] for k in _carry if k in last}
         if params is None:
             got = self._profit_from_context(conversation_id)
             if got is None:
@@ -740,6 +984,37 @@ class ChatService:
                 params.setdefault("cost", float(ctx.offers[0]["price_value"]))
                 ctx_hint = "（成本按上次货源进价估算）"
 
+        # 运费未给 → 按重量 + 日本专线小包计费规则估算（不能当 0 算，否则利润虚高）
+        ship_line = ""
+        ship_estimated = 0.0
+        if ("shipping" in user_params
+                or (last and "shipping" in last and not last.get("ship_estimated"))):
+            ship_estimated = last.get("ship_estimated", 0.0) if "shipping" not in user_params else 0.0
+        else:
+            from tiktok_ecommerce.services.shipping import (
+                estimate_shipping_cny, parse_weight_kg)
+            weight = (parse_weight_kg(message)
+                      or last.get("weight")
+                      or self.settings.default_product_weight_kg)
+            est = estimate_shipping_cny(
+                float(weight),
+                first_weight_kg=self.settings.shipping_first_weight_kg,
+                first_price_cny=self.settings.shipping_first_price_cny,
+                extra_per_kg_cny=self.settings.shipping_extra_per_kg_cny,
+            )
+            params["shipping"] = est.cost_cny
+            params["weight"] = est.weight_kg
+            params["ship_estimated"] = 1.0
+            ship_estimated = 1.0
+            ship_line = (f"\n· 运费未指定 → 按日本专线小包估算：{est.weight_kg:g}kg"
+                         f" ≈ {est.cost_cny:g} CNY（{est.grade}，未计关税/日本国内派送）")
+
+        # 反向定价：给了成本但没给售价 → 按目标净利率推算建议定价
+        if "selling" not in params and "cost" in params:
+            return self._pricing_suggestion(message, params, conversation_id,
+                                            adjusted=adjusted, ship_line=ship_line,
+                                            fx_note=fx_note, target_override=llm_target)
+
         if "selling" not in params or "cost" not in params:
             missing = "、".join(
                 k for k, label in (("selling", "售价"), ("cost", "成本")) if k not in params)
@@ -761,6 +1036,29 @@ class ChatService:
             return {"reply": f"利润测算失败了（{type(e).__name__}），请检查参数后重试。",
                     "intent": "profit", "data": None}
 
+        self._save_profit_ctx(conversation_id, mode="calc", params={
+            "selling": params["selling"], "cost": params.get("cost", 0),
+            "shipping": params.get("shipping", 0), "ads": params.get("ads", 0),
+            "weight": params.get("weight", 0), "ship_estimated": ship_estimated})
+
+        data = {"profit": r.model_dump()}
+        if not adjusted and last:
+            # 纯追问（没带新参数）→ 拆口径解释，而不是原样重发一遍数字
+            reply = (
+                f"接着上面的测算，把口径拆开看：\n"
+                f"· 毛利 = 售价 {r.selling_price_jpy:.0f} − 进价折 {r.cost_jpy:.0f}"
+                f" − 运费折 {r.shipping_jpy:.0f} = {r.gross_profit_jpy:.0f} JPY\n"
+                f"· 净利 = 毛利 − 佣金 {r.platform_fee_jpy:.0f}（{r.platform_fee_rate:.0%}）"
+                f" − 支付费 {r.payment_fee_jpy:.0f}（{r.payment_fee_rate:.0%}）"
+                f"{f' − 广告 {r.ads_jpy:.0f}' if r.ads_jpy else ''}"
+                f" = {r.net_profit_jpy:.0f} JPY（净利率 {r.net_margin * 100:.1f}%）\n"
+                f"· 汇率固定 {r.fx_used:.0f}（CNY→JPY），"
+                f"{'运费按重量估算折算' if ship_estimated else '运费按你给的人民币数折算'}；"
+                f"{ship_line}\n"
+                f"· 想改参数重算可以说：运费50 再算 / 售价5000 / 成本120。"
+            )
+            return {"reply": reply, "intent": "profit", "data": data}
+
         emoji = "✅" if r.net_profit_jpy > 0 else "⚠️"
         reply = (
             f"{emoji} 单件利润测算{ctx_hint}：\n"
@@ -769,10 +1067,119 @@ class ChatService:
             f"{f' + 广告 {r.ads_jpy:.0f}' if r.ads_jpy else ''}\n"
             f"· 毛利 {r.gross_profit_jpy:.0f} JPY → 净利 {r.net_profit_jpy:.0f} JPY"
             f"（净利率 {r.net_margin * 100:.1f}%）\n"
-            f"· {f'广告投入约 {r.break_even_units:.1f} 件回本' if r.break_even_units else '无广告投入，无需回本'}\n"
+            f"· {f'广告投入约 {r.break_even_units:.1f} 件回本' if r.break_even_units else '无广告投入，无需回本'}"
+            f"{ship_line}\n"
             f"汇率 {r.fx_used:.0f}（CNY→JPY）与费率均为估算，见数据卡明细。"
         )
-        data = {"profit": r.model_dump()}
+        return {"reply": reply, "intent": "profit", "data": data}
+
+    def _save_profit_ctx(self, conversation_id: str, mode: str,
+                         params: dict[str, float],
+                         target: float | None = None) -> None:
+        """把最近一次利润测算/定价参数存进会话上下文，供追问续算。"""
+        ctx = self._ctx(conversation_id)
+        ctx.last_intent = "profit"
+        ctx.profit = {"mode": mode, **params}
+        if target is not None:
+            ctx.profit["target_margin"] = target
+
+    # 反向定价：问题里可指定目标利润率（如"利润率25%"），默认 20%（行业估算值）
+    _TARGET_MARGIN_RE = re.compile(
+        r"(?:净利率|利润率|毛利率)\s*[:：=]?\s*(\d+(?:\.\d+)?)\s*%?")
+
+    def _pricing_suggestion(self, message: str, params: dict[str, float],
+                            conversation_id: str = "", adjusted: bool = True,
+                            ship_line: str = "", fx_note: str = "",
+                            target_override: float | None = None) -> dict[str, Any]:
+        """反向定价：只有成本（/运费/广告）时，按目标净利率推算建议售价（JPY）。"""
+        from tiktok_ecommerce.services.profit import ProfitRequest, compute_profit
+
+        last = self._ctx(conversation_id).profit or {}
+        target = float(last["target_margin"]) if last.get("target_margin") else 0.20
+        m = self._TARGET_MARGIN_RE.search(message)
+        if m:
+            target = float(m.group(1)) / 100
+        elif target_override:
+            target = target_override  # LLM 从口语里提取的目标利润率（如"两成五"）
+        # 目标利润率变了（如"利润率25%呢"）→ 视为有调整，重新出定价而不是只解释公式
+        prev_target = float(last["target_margin"]) if last.get("target_margin") else 0.20
+        if abs(target - prev_target) > 1e-9:
+            adjusted = True
+        if not 0 < target < 0.5:
+            return {
+                "reply": "目标利润率请在 1%~49% 之间，例如：成本148 定价多少合适 利润率25%。",
+                "intent": "profit", "data": None,
+            }
+        # 费率沿用利润模型的默认口径（佣金 8% + 支付费 2%，估算）
+        base_req = ProfitRequest(selling_price_jpy=1, cost_cny=0)
+        denom = 1 - base_req.platform_fee_rate - base_req.payment_fee_rate - target
+        if denom <= 0.05:  # 防御：费率+目标利润率过高时无解
+            return {
+                "reply": "这个目标利润率叠加上平台费率后算不出合理定价，请降低利润率要求。",
+                "intent": "profit", "data": None,
+            }
+        fx = self.settings.fx_cny_jpy or 21.0
+        shipping = params.get("shipping", 0)
+        ads = params.get("ads", 0)
+        base_jpy = (params["cost"] + shipping) * fx + ads
+        # 建议售价向上取整到 10 日元（尾数更好看，也保证不低于目标利润率）
+        selling = math.ceil(base_jpy / denom / 10) * 10
+        try:
+            req = ProfitRequest(
+                selling_price_jpy=selling,
+                cost_cny=params["cost"],
+                shipping_cny=shipping,
+                ads_jpy=ads,
+            )
+            r = compute_profit(req, default_fx=fx)
+        except Exception as e:
+            logger.exception("定价测算失败: %s", e)
+            return {"reply": f"定价测算失败了（{type(e).__name__}），请检查参数后重试。",
+                    "intent": "profit", "data": None}
+
+        cost_part = f"成本 {params['cost']:.0f} CNY"
+        if fx_note:
+            cost_part = fx_note + cost_part
+        if shipping:
+            cost_part += f" + 运费 {shipping:.0f} CNY"
+        rate_part = f"佣金 {base_req.platform_fee_rate:.0%} + 支付费 {base_req.payment_fee_rate:.0%}"
+        head = (f"🎯 定价建议（{cost_part}）：\n" if fx_note
+                else f"🎯 定价建议（{cost_part}，按汇率 {fx:.0f} 折算）：\n")
+        reply = (
+            head
+            + f"· 建议定价 {selling:,.0f} JPY，目标净利率 {target:.0%}"
+            f"（已扣{rate_part}）\n"
+            f"· 该定价下：净利 {r.net_profit_jpy:,.0f} JPY"
+            f"（实际净利率 {r.net_margin * 100:.1f}%）"
+            f"{ship_line}\n"
+            f"· 想调整目标可以说：成本148 定价多少合适 利润率25%；"
+            f"费率为行业估算，请按平台当期政策核对。"
+        )
+        data = {
+            "pricing": {
+                "suggested_price_jpy": selling,
+                "target_margin": target,
+                "cost_cny": params["cost"],
+                "shipping_cny": shipping,
+            },
+            "profit": r.model_dump(),
+        }
+        self._save_profit_ctx(conversation_id, mode="pricing", params={
+            "cost": params["cost"], "shipping": shipping, "ads": ads,
+            "weight": params.get("weight", 0),
+            "ship_estimated": params.get("ship_estimated", 0)}, target=target)
+        if not adjusted and last:
+            # 纯追问（没带新参数）→ 拆定价公式解释
+            reply = (
+                f"接着上面的定价，把公式拆开看：\n"
+                f"· 定价 = (成本 {params['cost']:.0f} + 运费 {shipping:.0f}) × 汇率 {fx:.0f}"
+                f" ÷ (1 − 佣金 {base_req.platform_fee_rate:.0%}"
+                f" − 支付费 {base_req.payment_fee_rate:.0%} − 目标净利率 {target:.0%})\n"
+                f"· 当前建议定价 {selling:,.0f} JPY，对应净利 {r.net_profit_jpy:,.0f} JPY"
+                f"（净利率 {r.net_margin * 100:.1f}%）{ship_line}\n"
+                f"· 想调整可以说：利润率25% / 运费50 / 成本120。"
+            )
+            return {"reply": reply, "intent": "profit", "data": data}
         return {"reply": reply, "intent": "profit", "data": data}
 
     def _run_sourcing(self, message: str, top_n: int = 6,
@@ -1154,10 +1561,16 @@ def _build_selection_reply(result: dict[str, Any], product: str,
         lines.append(f"· 匹配到 {len(offers)} 条真实货源，最低 {top.price} {img_hint}")
     if listing_path:
         lines.append(f"· 日文上架素材已生成：{listing_path}")
+    listing_obj = result.get("listing")
+    listing_data: dict[str, Any] = {}
+    if listing_obj is not None:
+        listing_data = (listing_obj.model_dump() if hasattr(listing_obj, "model_dump")
+                        else dict(listing_obj or {}))
     data = {
         "products": [_product_with_lifecycle(p) for p in products[:5]],
         "report": report.model_dump() if report else None,
         "offers": [o.model_dump() for o in offers[:6]],
+        "listing": listing_data,
         "listing_path": listing_path,
         "filtered_note": result.get("filtered_note"),
     }
